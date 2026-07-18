@@ -40,11 +40,13 @@ model User {
   email     String   @unique
   password  String
   role      Role     @default(MEMBER)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   borrowings   Borrowing[]
   reservations Reservation[]
+
+  @@map("users")
 }
 
 model Book {
@@ -53,8 +55,8 @@ model Book {
   author     String
   isbn       String   @unique
   summary    String?
-  categoryId Int
-  createdAt  DateTime @default(now())
+  categoryId Int      @map("category_id")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   category       Category        @relation(fields: [categoryId], references: [id])
   inventoryItems InventoryItem[]
@@ -63,56 +65,67 @@ model Book {
   @@index([title])
   @@index([author])
   @@index([isbn])
+  @@map("books")
 }
 
 model Category {
   id    Int    @id @default(autoincrement())
   name  String @unique
   books Book[]
+
+  @@map("categories")
 }
 
 model InventoryItem {
   id        Int             @id @default(autoincrement())
-  bookId    Int
+  bookId    Int             @map("book_id")
   barcode   String          @unique
   status    InventoryStatus @default(AVAILABLE)
   condition String?
 
   book       Book        @relation(fields: [bookId], references: [id])
   borrowings Borrowing[]
+
+  @@map("inventory_items")
 }
 
 model Borrowing {
   id              Int             @id @default(autoincrement())
-  userId          Int
-  inventoryItemId Int
-  borrowedAt      DateTime        @default(now())
-  dueDate         DateTime
-  returnedAt      DateTime?
+  userId          Int             @map("user_id")
+  inventoryItemId Int             @map("inventory_item_id")
+  borrowedAt      DateTime        @default(now()) @map("borrowed_at")
+  dueDate         DateTime        @map("due_date")
+  returnedAt      DateTime?       @map("returned_at")
   status          BorrowingStatus @default(ACTIVE)
 
   user          User          @relation(fields: [userId], references: [id])
   inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
   fines         Fine[]
+
+  @@map("borrowings")
 }
 
 model Reservation {
   id         Int               @id @default(autoincrement())
-  userId     Int
-  bookId     Int
-  reservedAt DateTime          @default(now())
+  userId     Int               @map("user_id")
+  bookId     Int               @map("book_id")
+  reservedAt DateTime          @default(now()) @map("reserved_at")
   status     ReservationStatus @default(PENDING)
 
   user User @relation(fields: [userId], references: [id])
   book Book @relation(fields: [bookId], references: [id])
+
+  @@map("reservations")
 }
 
 model Fine {
   id          Int        @id @default(autoincrement())
-  borrowingId Int
+  borrowingId Int        @map("borrowing_id")
   amount      Float
   status      FineStatus @default(UNPAID)
-  createdAt   DateTime   @default(now())
+  createdAt   DateTime   @default(now()) @map("created_at")
 
   borrowing Borrowing @relation(fields: [borrowingId], references: [id])
+
+  @@map("fines")
 }
