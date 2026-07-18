@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { ZodValidationException } from 'nestjs-zod';
+import { ZodError } from 'zod';
 
 @Catch()
 export class AllExceptionsFilter implements ExceptionFilter {
@@ -20,19 +21,20 @@ export class AllExceptionsFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR;
     let message: any = 'Internal server error';
 
-    if (exception instanceof HttpException) {
-      status = exception.getStatus();
-      const res = exception.getResponse();
-      message = typeof res === 'string' ? res : (res as any).message || res;
-    } else if (exception instanceof ZodValidationException) {
+    if (exception instanceof ZodValidationException) {
       status = HttpStatus.BAD_REQUEST;
-      message = (exception as any).getZodError().errors.map((err: any) => ({
+      const zodError = exception.getZodError() as ZodError;
+      message = zodError.issues.map((err) => ({
         path: err.path.join('.'),
         message: err.message,
       }));
+    } else if (exception instanceof HttpException) {
+      status = exception.getStatus();
+      const res = exception.getResponse();
+      message = typeof res === 'string' ? res : (res as any).message || res;
     } else if (exception instanceof Error) {
       this.logger.error(`[${request.method}] ${request.url}`, exception.stack);
-      message = exception.message; // Consider hiding this in production
+      message = exception.message;
     }
 
     response.status(status).json({
