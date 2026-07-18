@@ -1,0 +1,118 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum InventoryStatus {
+  AVAILABLE
+  BORROWED
+  MAINTENANCE
+}
+
+enum BorrowingStatus {
+  ACTIVE
+  RETURNED
+  OVERDUE
+}
+
+enum ReservationStatus {
+  PENDING
+  FULFILLED
+  CANCELLED
+}
+
+enum FineStatus {
+  UNPAID
+  PAID
+}
+
+model User {
+  id        Int      @id @default(autoincrement())
+  email     String   @unique
+  password  String
+  role      Role     @default(MEMBER)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  borrowings   Borrowing[]
+  reservations Reservation[]
+}
+
+model Book {
+  id         Int      @id @default(autoincrement())
+  title      String
+  author     String
+  isbn       String   @unique
+  summary    String?
+  categoryId Int
+  createdAt  DateTime @default(now())
+
+  category       Category        @relation(fields: [categoryId], references: [id])
+  inventoryItems InventoryItem[]
+  reservations   Reservation[]
+
+  @@index([title])
+  @@index([author])
+  @@index([isbn])
+}
+
+model Category {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  books Book[]
+}
+
+model InventoryItem {
+  id        Int             @id @default(autoincrement())
+  bookId    Int
+  barcode   String          @unique
+  status    InventoryStatus @default(AVAILABLE)
+  condition String?
+
+  book       Book        @relation(fields: [bookId], references: [id])
+  borrowings Borrowing[]
+}
+
+model Borrowing {
+  id              Int             @id @default(autoincrement())
+  userId          Int
+  inventoryItemId Int
+  borrowedAt      DateTime        @default(now())
+  dueDate         DateTime
+  returnedAt      DateTime?
+  status          BorrowingStatus @default(ACTIVE)
+
+  user          User          @relation(fields: [userId], references: [id])
+  inventoryItem InventoryItem @relation(fields: [inventoryItemId], references: [id])
+  fines         Fine[]
+}
+
+model Reservation {
+  id         Int               @id @default(autoincrement())
+  userId     Int
+  bookId     Int
+  reservedAt DateTime          @default(now())
+  status     ReservationStatus @default(PENDING)
+
+  user User @relation(fields: [userId], references: [id])
+  book Book @relation(fields: [bookId], references: [id])
+}
+
+model Fine {
+  id          Int        @id @default(autoincrement())
+  borrowingId Int
+  amount      Float
+  status      FineStatus @default(UNPAID)
+  createdAt   DateTime   @default(now())
+
+  borrowing Borrowing @relation(fields: [borrowingId], references: [id])
+}
