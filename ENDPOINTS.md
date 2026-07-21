@@ -179,7 +179,7 @@ Ce document liste tous les endpoints disponibles pour faciliter leur test manuel
 
 ### Retourner un livre
 - **Méthode** : `POST`
-- **URL** : `http://localhost:3000/api/v1/borrowings/return/<borrowing_id>`
+- **URL** : `http://localhost:3000/api/v1/borrowings/return/:borrowing_id`
 - **Auth** : Bearer Token
 
 ### Lister ses propres emprunts (My Borrowings)

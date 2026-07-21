@@ -9,13 +9,15 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 export class BorrowingsController {
   constructor(private readonly borrowingsService: BorrowingsService) {}
 
-  @Post('borrow')
-  borrowBook(@CurrentUser() user: any, @Body() borrowBookDto: BorrowBookDto) {
+  @Post("borrow")
+  async borrowBook(@CurrentUser() user: any, @Body() borrowBookDto: BorrowBookDto) {
     return this.borrowingsService.borrow(user.userId, borrowBookDto);
   }
 
   @Post('return/:id')
   returnBook(@CurrentUser() user: any, @Param('id', ParseIntPipe) id: number) {
+    // L'endpoint est /borrowings/return/:id
+    // Le frontend appelle /borrowings/:id/return
     return this.borrowingsService.returnBook(user.userId, id);
   }
 

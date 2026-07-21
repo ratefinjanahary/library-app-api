@@ -13,6 +13,19 @@ export class AnalyticsService {
       where: { status: BorrowingStatus.ACTIVE },
     });
     
+    // Récupération des emprunts en retard
+    const overdueBorrowings = await this.prisma.borrowing.count({
+      where: {
+        OR: [
+          { status: BorrowingStatus.OVERDUE },
+          {
+            status: BorrowingStatus.ACTIVE,
+            dueDate: { lt: new Date() },
+          },
+        ],
+      },
+    });
+    
     const finesAggregate = await this.prisma.fine.aggregate({
       _sum: { amount: true },
     });
@@ -22,6 +35,7 @@ export class AnalyticsService {
       totalBooks,
       activeMembers,
       activeBorrowings,
+      overdueBorrowings,  // Nouvelle propriété
       totalFines,
     };
   }

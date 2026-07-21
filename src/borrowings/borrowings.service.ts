@@ -12,47 +12,95 @@ export class BorrowingsService {
   constructor(private prisma: PrismaService) {}
 
   async borrow(userId: number, borrowBookDto: BorrowBookDto) {
-    const activeBorrowingsCount = await this.prisma.borrowing.count({
-      where: { userId, status: BorrowingStatus.ACTIVE },
+  return this.prisma.$transaction(async (tx) => {
+    // Vérifier le nombre d'emprunts actifs une seule fois avant la boucle
+    const activeBorrowingsCount = await tx.borrowing.count({
+      where: {
+        userId,
+        status: BorrowingStatus.ACTIVE
+      },
     });
 
-    if (activeBorrowingsCount >= MAX_BORROW_LIMIT) {
-      throw new BadRequestException(`You have reached the maximum borrow limit of ${MAX_BORROW_LIMIT} books.`);
+    const totalRequested = borrowBookDto.bookIds.length;
+    if (activeBorrowingsCount + totalRequested > MAX_BORROW_LIMIT) {
+      throw new BadRequestException(
+        `Vous avez déjà ${activeBorrowingsCount} emprunt(s) actif(s). Vous ne pouvez emprunter que ${MAX_BORROW_LIMIT - activeBorrowingsCount} livre(s) supplémentaire(s).`
+      );
     }
 
-    const availableItem = await this.prisma.inventoryItem.findFirst({
+    const borrowedBooks: any[] = [];
+    
+    // Vérifier la disponibilité de tous les livres avant de commencer l'emprunt
+    const availableItems = await tx.inventoryItem.findMany({
       where: {
-        bookId: borrowBookDto.bookId,
+        bookId: { in: borrowBookDto.bookIds },
         status: InventoryStatus.AVAILABLE,
       },
     });
 
-    if (!availableItem) {
-      throw new BadRequestException('No available copies of this book right now.');
+    // Vérifier que tous les livres demandés sont disponibles
+    const availableBookIds = availableItems.map(item => item.bookId);
+    const missingBooks = borrowBookDto.bookIds.filter(id => !availableBookIds.includes(id));
+    
+    if (missingBooks.length > 0) {
+      throw new BadRequestException(
+        `Les livres avec les IDs suivants ne sont pas disponibles: ${missingBooks.join(', ')}`
+      );
     }
 
-    const dueDate = new Date();
-    dueDate.setDate(dueDate.getDate() + BORROW_DAYS);
+    // Pour chaque livre, effectuer l'emprunt
+    for (const bookId of borrowBookDto.bookIds) {
+      const availableItem = availableItems.find(item => item.bookId === bookId);
+      
+      if (!availableItem) {
+        throw new BadRequestException(`Aucun exemplaire disponible pour le livre ID ${bookId}.`);
+      }
 
-    return this.prisma.$transaction(async (tx) => {
+      const dueDate = new Date();
+      dueDate.setDate(dueDate.getDate() + BORROW_DAYS);
+
       await tx.inventoryItem.update({
         where: { id: availableItem.id },
         data: { status: InventoryStatus.BORROWED },
       });
 
-      return tx.borrowing.create({
+      const borrowing = await tx.borrowing.create({
         data: {
           userId,
           inventoryItemId: availableItem.id,
           dueDate,
         },
+        include: {
+          inventoryItem: {
+            include: {
+              book: true
+            }
+          },
+          fines: true
+        }
       });
-    });
-  }
+      borrowedBooks.push(borrowing);
+    }
+    
+    return borrowedBooks;
+  });
+}
 
   async returnBook(userId: number, borrowingId: number) {
     const borrowing = await this.prisma.borrowing.findFirst({
-      where: { id: borrowingId, userId, status: BorrowingStatus.ACTIVE },
+      where: { 
+        id: borrowingId, 
+        userId, 
+        status: BorrowingStatus.ACTIVE 
+      },
+      include: {
+        inventoryItem: {
+          include: {
+            book: true
+          }
+        },
+        fines: true
+      }
     });
 
     if (!borrowing) {
@@ -75,6 +123,14 @@ export class BorrowingsService {
           status: BorrowingStatus.RETURNED,
           returnedAt,
         },
+        include: {
+          inventoryItem: {
+            include: {
+              book: true
+            }
+          },
+          fines: true
+        }
       });
 
       await tx.inventoryItem.update({
@@ -96,12 +152,76 @@ export class BorrowingsService {
   }
 
   async getMyBorrowings(userId: number) {
-    return this.prisma.borrowing.findMany({
+    const borrowings = await this.prisma.borrowing.findMany({
       where: { userId },
       include: {
-        inventoryItem: { include: { book: true } },
+        inventoryItem: { 
+          include: { 
+            book: true 
+          } 
+        },
         fines: true,
       },
+      orderBy: {
+        borrowedAt: 'desc'
+      }
     });
+
+    // Transformer les données pour correspondre au format attendu par le frontend
+    return borrowings.map(borrowing => ({
+      id: borrowing.id,
+      userId: borrowing.userId,
+      inventoryItemId: borrowing.inventoryItemId,
+      borrowDate: borrowing.borrowedAt,
+      dueDate: borrowing.dueDate,
+      returnDate: borrowing.returnedAt,
+      status: this.mapStatusToFrontend(borrowing.status),
+      inventory: borrowing.inventoryItem,
+      fines: borrowing.fines
+    }));
+  }
+
+  private mapStatusToFrontend(status: BorrowingStatus): string {
+    switch (status) {
+      case BorrowingStatus.ACTIVE:
+        return 'BORROWED';
+      case BorrowingStatus.RETURNED:
+        return 'RETURNED';
+      case BorrowingStatus.OVERDUE:
+        return 'OVERDUE';
+      default:
+        return status;
+    }
+  }
+
+  // Nouvelle méthode pour récupérer un emprunt par ID
+  async getBorrowingById(userId: number, borrowingId: number) {
+    const borrowing = await this.prisma.borrowing.findFirst({
+      where: { id: borrowingId, userId },
+      include: {
+        inventoryItem: { 
+          include: { 
+            book: true 
+          } 
+        },
+        fines: true,
+      }
+    });
+
+    if (!borrowing) {
+      throw new NotFoundException('Borrowing not found');
+    }
+
+    return {
+      id: borrowing.id,
+      userId: borrowing.userId,
+      inventoryItemId: borrowing.inventoryItemId,
+      borrowDate: borrowing.borrowedAt,
+      dueDate: borrowing.dueDate,
+      returnDate: borrowing.returnedAt,
+      status: this.mapStatusToFrontend(borrowing.status),
+      inventory: borrowing.inventoryItem,
+      fines: borrowing.fines
+    };
   }
 }
